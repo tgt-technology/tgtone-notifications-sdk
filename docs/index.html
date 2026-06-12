@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@tgtone/notifications-sdk — Arquitectura</title>
+  <script src="https://unpkg.com/@antv/g6@5.1.4/dist/g6.min.js"></script>
+  <!-- SYSTEM FONTS: Inter (modern) + JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117;
+      --bg-card: #161b22;
+      --bg-code: #1c2333;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --cyan: #39d2c0;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    header {
+      padding: 48px 0 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 40px;
+    }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--accent), var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header .subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-top: 6px;
+    }
+    header .badge {
+      display: inline-block;
+      background: var(--accent-dim);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 20px;
+      margin-top: 8px;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 20px 0 32px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    nav a {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      transition: all 0.2s;
+    }
+    nav a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* ── Sections ── */
+    section { margin-bottom: 48px; }
+    section h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    section h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 24px 0 10px;
+      color: var(--accent);
+    }
+    section p { margin-bottom: 12px; color: var(--text-muted); }
+    section ul, section ol { margin: 8px 0 16px 20px; color: var(--text-muted); }
+    section li { margin-bottom: 6px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+    }
+    .card p { font-size: 0.9rem; }
+
+    /* ── Code ── */
+    code, pre {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+    pre .comment { color: #8b949e; }
+    pre .keyword  { color: var(--purple); }
+    pre .string   { color: var(--green); }
+    pre .function { color: var(--cyan); }
+    pre .type     { color: var(--orange); }
+    pre .number   { color: var(--orange); }
+    pre .property { color: var(--accent); }
+    code.hl { background: var(--bg-code); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 0.88rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: var(--bg-card);
+      font-weight: 600;
+      color: var(--text);
+    }
+    td { color: var(--text-muted); }
+    tr:hover td { background: rgba(88,166,255,0.04); }
+
+    /* ── Diagram ── */
+    .diagram-wrap {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 16px 0;
+    }
+    .diagram-wrap .g6-toolbar { position: absolute; top: 8px; right: 8px; z-index: 10; }
+
+    /* ── Flow boxes ── */
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 16px 0;
+    }
+    .flow-step {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      flex: 1;
+      min-width: 140px;
+      text-align: center;
+    }
+    .flow-step .step-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .flow-step .step-val {
+      font-size: 0.88rem;
+      font-weight: 500;
+    }
+    .flow-arrow {
+      display: flex;
+      align-items: center;
+      color: var(--text-muted);
+      font-size: 1.2rem;
+      padding: 0 4px;
+    }
+
+    /* ── Severity badges ── */
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin: 1px 2px;
+    }
+    .tag-green  { background: rgba(63,185,80,0.15); color: var(--green); }
+    .tag-orange { background: rgba(210,153,34,0.15); color: var(--orange); }
+    .tag-red    { background: rgba(248,81,73,0.15); color: var(--red); }
+    .tag-blue   { background: rgba(88,166,255,0.15); color: var(--accent); }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 32px 0;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      header h1 { font-size: 1.6rem; }
+      .container { padding: 0 16px; }
+      pre { font-size: 0.75rem; padding: 12px; }
+      table { font-size: 0.78rem; }
+      th, td { padding: 6px 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <h1>@tgtone/notifications-sdk</h1>
+    <div class="subtitle">Arquitectura, modelo de datos y guía de integración para apps del ecosistema TGT One</div>
+    <div><span class="badge">v1.0.0</span></div>
+  </div>
+</header>
+
+<nav class="container">
+  <a href="#modelo">Modelo</a>
+  <a href="#diagrama">Diagrama</a>
+  <a href="#lectura">Cómo se lee</a>
+  <a href="#targeting">Targeting</a>
+  <a href="#hook">Hook React</a>
+  <a href="#backend">Backend</a>
+  <a href="#api">API</a>
+  <a href="#tipos">Tipos</a>
+  <a href="#errores">Errores</a>
+</nav>
+
+<div class="container">
+
+<!-- ════════════════════════════════════ -->
+<section id="modelo">
+<h2>Modelo de datos</h2>
+<p>1 notificación = 1 registro en BD. El sistema es <strong>1:N puro</strong>. El filtro se aplica en <strong>lectura</strong>, no en creación.</p>
+
+<div class="card">
+  <div class="card-title">Tabla: <code class="hl">notifications</code></div>
+  <pre>┌──────────────────────────────────────────────────────────────┐
+│ <span class="property">id</span>            │ <span class="type">UUID</span> (PK)                                              │
+│ <span class="property">tenant_id</span>     │ FK → tenants                                        │
+│ <span class="property">app_id</span>        │ <span class="string">"baco"</span>, <span class="string">"nexo"</span>, <span class="string">"crm"</span>                                  │
+│ <span class="property">title</span>         │ <span class="string">"Ticket SUP-001 asignado"</span>                            │
+│ <span class="property">message</span>       │ <span class="string">"Asignado al equipo Soporte"</span>                            │
+│ <span class="property">type</span>          │ info │ success │ warning │ error                       │
+│ <span class="property">priority</span>      │ low │ normal │ high │ urgent                        │
+│ <span class="property">target_user_id</span> │ <span class="keyword">null</span> = broadcast / <span class="type">string</span> = personal           │
+│ <span class="property">metadata</span>      │ <span class="type">JSONB</span> (GIN index) — app-specific                     │
+│                │ ej: { <span class="string">"teamId"</span>: <span class="string">"soporte"</span> }                        │
+│ <span class="property">expires_at</span>     │ created_at + 7 días                                 │
+│ <span class="property">deleted_at</span>     │ soft delete (<span class="keyword">null</span> = activa)                            │
+│ <span class="property">created_at</span>     │ now()                                                │
+└──────────────────────────────────────────────────────────────┘</pre>
+</div>
+
+<div class="card">
+  <div class="card-title">Tabla: <code class="hl">notification_reads</code></div>
+  <pre>┌──────────────────────────────────────────────────────────┐
+│ <span class="property">notification_id</span> │ FK → notifications (CASCADE)                    │
+│ <span class="property">user_id</span>         │ <span class="type">UUID</span>                                           │
+│ <span class="property">read_at</span>         │ now()                                           │
+│ UNIQUE(notification_id, user_id)                          │
+└──────────────────────────────────────────────────────────┘</pre>
+</div>
+
+<p>1 broadcast = 1 fila en <code class="hl">notifications</code>. Cada usuario que la lee = 1 fila en <code class="hl">notification_reads</code>. Sin duplicación del mensaje.</p>
+
+<h3>Índices</h3>
+<pre><span class="keyword">CREATE INDEX</span> ON notifications (tenant_id, app_id, created_at <span class="keyword">DESC</span>);   <span class="comment">-- consultas por app</span>
+<span class="keyword">CREATE INDEX</span> ON notifications (tenant_id, app_id, target_user_id);       <span class="comment">-- filtro personales</span>
+<span class="keyword">CREATE INDEX</span> ON notifications (expires_at);                               <span class="comment">-- cleanup</span>
+<span class="keyword">CREATE INDEX</span> ON notifications <span class="keyword">USING GIN</span> (metadata);                   <span class="comment">-- metadata JSONB</span></pre>
+<p>El índice <strong>GIN</strong> permite consultar sobre la columna JSONB sin full scan. Las queries tipo <code class="hl">metadata @&gt; '{"teamId": "soporte"}'</code> son eficientes.</p>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="diagrama">
+<h2>Diagrama de flujo</h2>
+<div class="diagram-wrap" id="flow-diagram" style="height:340px"></div>
+
+<h3 style="margin-top:20px">Arquitectura: Core vs App</h3>
+<div class="diagram-wrap" id="arch-diagram" style="height:340px"></div>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="lectura">
+<h2>Cómo se lee</h2>
+<p>La query SQL completa que usa el backend para obtener las notificaciones de un usuario:</p>
+
+<pre><span class="keyword">SELECT</span> n.*, nr.read_at
+<span class="keyword">FROM</span> notifications n
+<span class="keyword">LEFT JOIN</span> notification_reads nr
+  <span class="keyword">ON</span> nr.notification_id = n.id
+  <span class="keyword">AND</span> nr.user_id = <span class="string">'pedro-uuid'</span>
+<span class="keyword">WHERE</span> n.tenant_id = <span class="string">'tenant-1'</span>
+  <span class="keyword">AND</span> (n.expires_at <span class="keyword">IS NULL</span> <span class="keyword">OR</span> n.expires_at &gt; <span class="function">NOW</span>())
+  <span class="keyword">AND</span> n.deleted_at <span class="keyword">IS NULL</span>
+  <span class="keyword">AND</span> (
+    <span class="comment">── Personales ──</span>
+    n.target_user_id = <span class="string">'pedro-uuid'</span>     ← solo Pedro
+
+    <span class="keyword">OR</span> (
+      <span class="comment">── Broadcasts ──</span>
+      n.target_user_id <span class="keyword">IS NULL</span>
+      <span class="keyword">AND</span> (
+        n.metadata <span class="keyword">IS NULL</span>                ← sin metadata = todos ven
+        <span class="keyword">OR</span> n.metadata-&gt;&gt;<span class="string">'teamId'</span> = <span class="string">'soporte'</span>  ← coincide con equipo
+        <span class="keyword">OR</span> n.metadata-&gt;&gt;<span class="string">'teamId'</span> = <span class="string">'ti'</span>
+      )
+    )
+  )
+<span class="keyword">ORDER BY</span> n.priority <span class="keyword">DESC</span>, n.created_at <span class="keyword">DESC</span>
+<span class="keyword">LIMIT</span> 5</pre>
+
+<p>Campos del response:</p>
+<pre>{
+  notifications: [{
+    id, appId, title, message,
+    type: <span class="string">'info'</span> | <span class="string">'success'</span> | <span class="string">'warning'</span> | <span class="string">'error'</span>,
+    priority: <span class="string">'low'</span> | <span class="string">'normal'</span> | <span class="string">'high'</span> | <span class="string">'urgent'</span>,
+    actionUrl, metadata, createdAt,          <span class="comment">// ISO 8601</span>
+    isRead, readAt,                          <span class="comment">// de notification_reads</span>
+    isDeleted, deletedAt                     <span class="comment">// soft delete</span>
+  }],
+  total, skip, take
+}</pre>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="targeting">
+<h2>Targeting</h2>
+
+<h3>1. Broadcast (todos los usuarios del tenant+app)</h3>
+<pre><span class="keyword">await</span> api.create({
+  appId: <span class="string">'nexo'</span>,
+  title: <span class="string">'Mantenimiento programado'</span>,
+  <span class="comment">// Sin targetUserId ni metadata → visible para TODOS</span>
+});</pre>
+
+<h3>2. Usuario específico (caso raro 1:1)</h3>
+<pre><span class="keyword">await</span> api.create({
+  appId: <span class="string">'nexo'</span>,
+  title: <span class="string">'Te asignaron el ticket SUP-001'</span>,
+  targetUserId: <span class="string">'pedro-uuid'</span>,   <span class="comment">// solo Pedro lo ve</span>
+});</pre>
+
+<h3>3. Por equipo (metadata app-specific)</h3>
+<pre><span class="comment">// Creación: la app agrega metadata con el ID del equipo</span>
+<span class="keyword">await</span> api.create({
+  appId: <span class="string">'nexo'</span>,
+  title: <span class="string">'Ticket SUP-001 asignado'</span>,
+  metadata: { teamId: <span class="string">'soporte'</span> },   <span class="comment">// ← app-specific</span>
+});
+
+<span class="comment">// Lectura: el usuario pasa sus equipos al filtro</span>
+<span class="keyword">const</span> result = <span class="keyword">await</span> api.getNotifications({
+  appId: <span class="string">'nexo'</span>,
+  metadata: { teamId: [<span class="string">'soporte'</span>, <span class="string">'ti'</span>] },  <span class="comment">// OR: soporte O ti</span>
+});</pre>
+
+<h3>4. OR plano multi-key</h3>
+<pre><span class="keyword">const</span> result = <span class="keyword">await</span> api.getNotifications({
+  appId: <span class="string">'nexo'</span>,
+  metadata: {
+    teamId: [<span class="string">'soporte'</span>, <span class="string">'ti'</span>],
+    projectId: [<span class="string">'proyecto-alfa'</span>],
+  },
+  <span class="comment">// OR plano entre todos los valores de todas las keys</span>
+});</pre>
+
+<div class="card" style="border-left:3px solid var(--accent);">
+  <div class="card-title">💡 Reglas del filtro combinado</div>
+  <ul>
+    <li><strong>Personales</strong> (targetUserId = userId) → siempre visibles</li>
+    <li><strong>Broadcasts sin metadata</strong> (metadata IS NULL) → visibles para todos los usuarios (legacy)</li>
+    <li><strong>Broadcasts con metadata</strong> → visibles solo si al menos un valor del filtro coincide</li>
+    <li><strong>OR plano</strong>: todos los valores de todas las keys se combinan en OR</li>
+    <li><strong>Un usuario puede tener N equipos</strong>, y el array OR acepta todos</li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="hook">
+<h2>Hook React: <code class="hl">useNotifications</code></h2>
+<p>Export: <code class="hl">@tgtone/notifications-sdk/react</code></p>
+
+<table>
+  <tr><th>Prop</th><th>Tipo</th><th>Default</th><th>Descripción</th></tr>
+  <tr><td><code>api</code></td><td>NotificationsAPI</td><td>requerido</td><td>Instancia del SDK ya configurada</td></tr>
+  <tr><td><code>appId</code></td><td>string</td><td>requerido</td><td>appId a consultar</td></tr>
+  <tr><td><code>filter</code></td><td>{ metadata?: MetadataFilter }</td><td>—</td><td>Filtro de targeting app-specific</td></tr>
+  <tr><td><code>limit</code></td><td>number</td><td>5</td><td>Notificaciones a mostrar</td></tr>
+  <tr><td><code>useHistory</code></td><td>boolean</td><td>false</td><td>Incluir leídas + eliminadas</td></tr>
+  <tr><td><code>pollingInterval</code></td><td>number</td><td>15000</td><td>ms entre polls</td></tr>
+</table>
+
+<pre><span class="keyword">import</span> { useState } <span class="keyword">from</span> <span class="string">'react'</span>;
+<span class="keyword">import</span> { NotificationsAPI } <span class="keyword">from</span> <span class="string">'@tgtone/notifications-sdk'</span>;
+<span class="keyword">import</span> { useNotifications } <span class="keyword">from</span> <span class="string">'@tgtone/notifications-sdk/react'</span>;
+
+<span class="keyword">const</span> api = <span class="keyword">new</span> NotificationsAPI({
+  apiUrl: <span class="keyword">import</span>.meta.env.VITE_CORE_API_URL || <span class="string">'/api'</span>,
+  getToken: () =&gt; localStorage.getItem(<span class="string">'tgtone_auth_token'</span>),
+});
+
+<span class="keyword">function</span> <span class="function">NotificationCenter</span>({ user }) {
+  <span class="keyword">const</span> {
+    notifications, unreadCount, isLoading,
+    markAsRead, markAllAsRead,
+  } = <span class="function">useNotifications</span>({
+    api,
+    appId: <span class="string">'nexo'</span>,
+    filter: { metadata: { teamId: user.teams } },  <span class="comment">// ← app pasa contexto</span>
+    limit: 5,
+  });
+
+  <span class="keyword">if</span> (notifications.length === <span class="number">0</span>) {
+    <span class="keyword">return</span> <span class="type">&lt;</span>p<span class="type">&gt;</span>Sin notificaciones<span class="type">&lt;</span>/p<span class="type">&gt;</span>;
+  }
+
+  <span class="keyword">return</span> (
+    <span class="type">&lt;</span>div<span class="type">&gt;</span>
+      <span class="type">&lt;</span>button onClick={markAllAsRead}<span class="type">&gt;</span>
+        Campana ({unreadCount})
+      <span class="type">&lt;</span>/button<span class="type">&gt;</span>
+      {notifications.map(n =&gt; (
+        <span class="type">&lt;</span>div key={n.id} onClick={() =&gt; markAsRead(n.id)}
+             className={!n.read ? <span class="string">'bg-muted/30'</span> : <span class="string">''</span>}<span class="type">&gt;</span>
+          <span class="type">&lt;</span>strong<span class="type">&gt;</span>{n.title}<span class="type">&lt;</span>/strong<span class="type">&gt;</span>
+          <span class="type">&lt;</span>p<span class="type">&gt;</span>{n.message}<span class="type">&lt;</span>/p<span class="type">&gt;</span>
+        <span class="type">&lt;</span>/div<span class="type">&gt;</span>
+      ))}
+    <span class="type">&lt;</span>/div<span class="type">&gt;</span>
+  );
+}</pre>
+
+<table>
+  <tr><th>Retorno</th><th>Descripción</th></tr>
+  <tr><td><code>notifications</code></td><td>Lista con <code>read</code> (en vez de isRead), <code>createdAt</code> como Date</td></tr>
+  <tr><td><code>unreadCount</code></td><td>Conteo de no leídas</td></tr>
+  <tr><td><code>isLoading</code></td><td>Cargando primera vez</td></tr>
+  <tr><td><code>error</code></td><td>Mensaje de error o null</td></tr>
+  <tr><td><code>markAsRead, markAllAsRead, deleteNotification</code></td><td>Con optimistc update local</td></tr>
+  <tr><td><code>refresh</code></td><td>Forzar recarga manual</td></tr>
+</table>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="backend">
+<h2>Integración desde backend (BFF)</h2>
+
+<p>Cada app necesita un servicio para enviar notificaciones. Ejemplo completo:</p>
+
+<pre><span class="comment">// services/notifications.service.ts</span>
+<span class="keyword">import</span> { NotificationsAPI } <span class="keyword">from</span> <span class="string">'@tgtone/notifications-sdk'</span>;
+
+<span class="keyword">const</span> CORE_API_URL = process.env.CORE_API_URL!;
+
+<span class="keyword">export function</span> <span class="function">createNotificationsService</span>(req) {
+  <span class="keyword">const</span> token = req.headers.authorization?.replace(<span class="string">'Bearer '</span>, <span class="string">''</span>) || <span class="keyword">null</span>;
+  <span class="keyword">return new</span> NotificationsAPI({
+    apiUrl: CORE_API_URL,
+    getToken: () =&gt; token,
+  });
+}</pre>
+
+<pre><span class="comment">// controller.ts — uso</span>
+<span class="keyword">import</span> { createNotificationsService } <span class="keyword">from</span> <span class="string">'../services/notifications.service'</span>;
+
+app.post(<span class="string">'/api/tickets'</span>, <span class="keyword">async</span> (req, res) =&gt; {
+  <span class="keyword">const</span> ticket = <span class="keyword">await</span> crearTicket(req.body);
+
+  <span class="keyword">const</span> notif = createNotificationsService(req);
+  <span class="keyword">await</span> notif.create({
+    appId: <span class="string">'nexo'</span>,
+    title: <span class="string">`Ticket ${ticket.id} creado`</span>,
+    message: <span class="string">`${ticket.numero} fue creado por ${req.user.name}`</span>,
+    type: <span class="string">'info'</span>,
+    actionUrl: <span class="string">`/tickets/${ticket.id}`</span>,
+    metadata: { teamId: ticket.teamId },  <span class="comment">// ← targeting por equipo</span>
+  });
+
+  res.json(ticket);
+});</pre>
+
+<div class="card" style="border-left:3px solid var(--orange);">
+  <div class="card-title">⚠️ Nota importante</div>
+  <p>El token JWT debe pertenecer a un usuario del tenant donde se crea la notificación. Para notificaciones de sistema (sin usuario), se requiere una API Key. Contacta al equipo de core backend para habilitar esta opción.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="api">
+<h2>API completa</h2>
+
+<table>
+  <tr><th>Método</th><th>Endpoint</th><th>Descripción</th></tr>
+  <tr><td><code>create(dto)</code></td><td>POST /api/v1/notifications</td><td>Crear notificación (broadcast 1:N)</td></tr>
+  <tr><td><code>getNotifications(filters?)</code></td><td>GET /api/v1/notifications</td><td>Listar (default: no leídas)</td></tr>
+  <tr><td><code>getHistory(params)</code></td><td>GET /api/v1/notifications/history</td><td>Historial paginado</td></tr>
+  <tr><td><code>getUnreadCount(appId?, metadata?)</code></td><td>GET /api/v1/notifications/unread-count</td><td>Badge count</td></tr>
+  <tr><td><code>markAsRead(id)</code></td><td>PUT /api/v1/notifications/:id/read</td><td>Marcar como leída</td></tr>
+  <tr><td><code>markAllAsRead(appId?)</code></td><td>PUT /api/v1/notifications/read-all</td><td>Marcar todas</td></tr>
+  <tr><td><code>delete(id)</code></td><td>DELETE /api/v1/notifications/:id</td><td>Soft delete</td></tr>
+  <tr><td><code>cleanup()</code></td><td>POST /api/v1/notifications/cleanup</td><td>Limpiar expiradas</td></tr>
+</table>
+
+<h3>Config</h3>
+<pre><span class="keyword">const</span> api = <span class="keyword">new</span> NotificationsAPI({
+  apiUrl: <span class="string">'https://tgtone-console-backend.run.app/api'</span>,
+  getToken: () =&gt; localStorage.getItem(<span class="string">'tgtone_auth_token'</span>),
+  timeout: <span class="number">30000</span>,        <span class="comment">// opcional</span>
+  headers: {},             <span class="comment">// opcional</span>
+  debug: <span class="keyword">false</span>,           <span class="comment">// opcional</span>
+});</pre>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="tipos">
+<h2>Tipos exportados</h2>
+
+<pre><span class="keyword">import</span> <span class="keyword">type</span> {
+  Notification,             <span class="comment">// Notificación completa (respuesta del backend)</span>
+  CreateNotificationDto,    <span class="comment">// DTO para crear</span>
+  NotificationFilters,      <span class="comment">// Filtros para listar (incluye metadata)</span>
+  GetHistoryParams,         <span class="comment">// Parámetros para historial paginado</span>
+  NotificationsResponse,    <span class="comment">// Respuesta paginada</span>
+  UnreadCountResponse,      <span class="comment">// { count: number }</span>
+  MarkAllReadResponse,      <span class="comment">// { success, markedCount }</span>
+  CleanupResponse,          <span class="comment">// { deletedCount, readExpiredCount, ... }</span>
+  MetadataFilter,           <span class="comment">// { [key: string]: string | string[] }</span>
+} <span class="keyword">from</span> <span class="string">'@tgtone/notifications-sdk'</span>;</pre>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<section id="errores">
+<h2>Manejo de errores</h2>
+
+<p>Toda llamada puede lanzar <code class="hl">NotificationsError</code>:</p>
+
+<pre><span class="keyword">import</span> { NotificationsError } <span class="keyword">from</span> <span class="string">'@tgtone/notifications-sdk'</span>;
+
+<span class="keyword">try</span> {
+  <span class="keyword">await</span> api.create({ appId: <span class="string">'baco'</span>, title: <span class="string">''</span>, message: <span class="string">''</span> });
+} <span class="keyword">catch</span> (err) {
+  <span class="keyword">if</span> (err <span class="keyword">instanceof</span> NotificationsError) {
+    <span class="keyword">switch</span> (err.statusCode) {
+      <span class="keyword">case</span> <span class="number">401</span>: <span class="comment">/* token inválido */</span> <span class="keyword">break</span>;
+      <span class="keyword">case</span> <span class="number">400</span>: <span class="comment">/* validación */</span> <span class="keyword">break</span>;
+      <span class="keyword">case</span> <span class="number">404</span>: <span class="comment">/* no encontrado */</span> <span class="keyword">break</span>;
+    }
+  }
+}</pre>
+
+<table>
+  <tr><th>Método helper</th><th>Descripción</th></tr>
+  <tr><td><code>err.isUnauthorized()</code></td><td>statusCode === 401</td></tr>
+  <tr><td><code>err.isNotFound()</code></td><td>statusCode === 404</td></tr>
+  <tr><td><code>err.isValidationError()</code></td><td>statusCode === 400</td></tr>
+</table>
+</section>
+
+</div>
+
+<footer>
+  <div class="container">
+    @tgtone/notifications-sdk — TGT Technology — MIT License
+  </div>
+</footer>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// Diagram 1: Flujo end-to-end
+// ══════════════════════════════════════════════════════════════
+const flowData = {
+  nodes: [
+    { id: 'accion',    label: 'Acción\n(cierra ticket)',     x: 100,  y: 170 },
+    { id: 'nexo-be',   label: 'Nexo Backend\napi.create()',  x: 300,  y: 170 },
+    { id: 'bd',        label: 'BD\n1 registro',              x: 500,  y: 170 },
+    { id: 'nexo-fe',   label: 'Nexo Frontend\nuseNotifications()', x: 700, y: 170 },
+  ],
+  edges: [
+    { source: 'accion',  target: 'nexo-be', label: 'POST /api/auth/...' },
+    { source: 'nexo-be', target: 'bd',      label: 'INSERT notifications' },
+    { source: 'bd',      target: 'nexo-fe', label: 'SELECT + filtro' },
+  ],
+};
+
+const flowGraph = new G6.Graph({
+  container: 'flow-diagram',
+  width: 860,
+  height: 340,
+  autoFit: 'center',
+  theme: 'dark',
+  node: {
+    style: {
+      size: [130, 56],
+      radius: 10,
+      labelPlacement: 'center',
+      labelText: d => d.label,
+      labelFontSize: 12,
+      labelFontWeight: 500,
+      labelFill: '#e6edf3',
+      fill: '#161b22',
+      stroke: '#30363d',
+      lineWidth: 1.5,
+    },
+    state: {
+      highlight: { fill: '#1f6feb', stroke: '#58a6ff', lineWidth: 2 },
+    },
+  },
+  edge: {
+    style: {
+      stroke: '#30363d',
+      lineWidth: 1.5,
+      labelText: d => d.label || '',
+      labelFontSize: 10,
+      labelFill: '#8b949e',
+      labelBackgroundFill: '#0d1117',
+      labelBackgroundOpacity: 0.9,
+      labelBackgroundPadding: [2, 6],
+      endArrow: true,
+    },
+  },
+  layout: { type: 'linear', direction: 'horizontal' },
+});
+
+flowGraph.setData(flowData);
+flowGraph.render();
+
+// ══════════════════════════════════════════════════════════════
+// Diagram 2: Separación de concerns
+// ══════════════════════════════════════════════════════════════
+const archData = {
+  nodes: [
+    { id: 'core',    label: 'Core Notifications\n(SDK + Backend)', x: 150, y: 170,
+      desc: 'create / getNotifications / markAsRead\nmetadata = JSON opaco\nNo sabe de equipos' },
+    { id: 'nexo',    label: 'App Nexo',               x: 430, y: 100,
+      desc: 'create({ metadata: { teamId } })\nfilter: { teamId: user.teams }' },
+    { id: 'baco',    label: 'App Baco',               x: 430, y: 240,
+      desc: 'create({ metadata: { barricaId } })\nBroadcast sin filtro' },
+  ],
+  edges: [
+    { source: 'nexo', target: 'core', label: 'POST /create' },
+    { source: 'baco', target: 'core', label: 'POST /create' },
+  ],
+};
+
+const archGraph = new G6.Graph({
+  container: 'arch-diagram',
+  width: 860,
+  height: 340,
+  theme: 'dark',
+  node: {
+    style: {
+      size: [200, 70],
+      radius: 10,
+      labelPlacement: 'center',
+      labelText: d => d.label,
+      labelFontSize: 13,
+      labelFontWeight: 600,
+      labelFill: '#e6edf3',
+      fill: '#161b22',
+      stroke: '#30363d',
+      lineWidth: 1.5,
+    },
+  },
+  edge: {
+    style: {
+      stroke: '#30363d',
+      lineWidth: 1.5,
+      labelText: d => d.label || '',
+      labelFontSize: 10,
+      labelFill: '#8b949e',
+      labelBackgroundFill: '#0d1117',
+      labelBackgroundOpacity: 0.9,
+      labelBackgroundPadding: [2, 6],
+      endArrow: true,
+    },
+  },
+});
+
+archGraph.setData(archData);
+archGraph.render();
+
+// ── Responsive resize ──
+function resizeGraphs() {
+  const w = Math.min(document.querySelector('.diagram-wrap')?.clientWidth || 860, 860);
+  flowGraph.setSize(w, 340);
+  archGraph.setSize(w, 340);
+  flowGraph.fitCenter();
+  archGraph.fitCenter();
+}
+window.addEventListener('resize', resizeGraphs);
+setTimeout(resizeGraphs, 200);
+</script>
+
+</body>
+</html>

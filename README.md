@@ -2,13 +2,15 @@
 
 SDK para el sistema de notificaciones de TGT One.
 
-Permite crear, listar, marcar como leídas y eliminar notificaciones desde cualquier app del ecosistema (Baco, CRM, POS, etc.).
+Crea, lista, marca como leídas y elimina notificaciones desde cualquier app del ecosistema.
+
+**Modelo:** 1 notificación en BD, filtro en lectura. Broadcast (1:N) por defecto. Targeting app-specific via metadata JSON.
 
 ---
 
 ## Stack
 
-- **Runtime**: Node.js / Bun (compatible con ambos)
+- **Runtime**: Node.js / Bun
 - **Formato**: ESM (`"type": "module"`)
 - **Lenguaje**: TypeScript (tipos incluidos)
 - **HTTP**: `fetch` nativo — **0 dependencias externas**
@@ -31,13 +33,13 @@ npm install @tgtone/notifications-sdk
 ```typescript
 import { NotificationsAPI } from '@tgtone/notifications-sdk';
 
-// Instancia con el token JWT del usuario que hace la request
+// Instancia con el JWT del usuario que hace la request
 const api = new NotificationsAPI({
   apiUrl: 'https://tgtone-console-backend.run.app/api',
   getToken: () => req.headers.authorization?.replace('Bearer ', '') || null,
 });
 
-// Enviar notificación de éxito
+// Crear notificación (broadcast 1:N)
 await api.create({
   appId: 'baco',
   title: 'Trasiego completado',
@@ -54,21 +56,20 @@ await api.create({
 import { NotificationsAPI } from '@tgtone/notifications-sdk';
 import { useNotifications } from '@tgtone/notifications-sdk/react';
 
-function NotifBell() {
-  const api = new NotificationsAPI({
-    apiUrl: 'https://tgtone-console-backend.run.app/api',
-    getToken: () => localStorage.getItem('tgtone_auth_token'),
-  });
+const api = new NotificationsAPI({
+  apiUrl: import.meta.env.VITE_CORE_API_URL || '/api',
+  getToken: () => localStorage.getItem('tgtone_auth_token'),
+});
 
-  const { unreadCount, notifications, markAsRead, isLoading } = useNotifications({
+function NotifBell() {
+  const { unreadCount, markAllAsRead } = useNotifications({
     api,
-    appId: 'baco',               // ← tu appId
-    unreadOnly: true,             // solo no leídas
-    pollingInterval: 15000,       // actualizar cada 15s
+    appId: 'baco',
+    limit: 5,
   });
 
   return (
-    <button onClick={() => markAllAsRead()}>
+    <button onClick={markAllAsRead}>
       Campana ({unreadCount})
     </button>
   );
@@ -86,42 +87,41 @@ function NotifBell() {
 | `apiUrl` | `string` | **requerido** | URL base del Core API (ej: `https://tgtone-console-backend.run.app/api`) |
 | `getToken` | `() => string \| null` | **requerido** | Función que retorna el JWT (sin "Bearer") |
 | `timeout` | `number` | `30000` | Timeout por request en ms |
-| `headers` | `Record<string, string>` | `{}` | Headers adicionales para todas las requests |
+| `headers` | `Record<string, string>` | `{}` | Headers adicionales |
 | `debug` | `boolean` | `false` | Logs de debug en consola |
 
 ---
 
 ### `create(data)` → `Notification`
 
-Crear una notificación.
+Crear una notificación. **Siempre es 1 registro en BD** (broadcast 1:N). No se multiplica por destinatarios.
 
 | Campo | Tipo | Default | Descripción |
 |-------|------|---------|-------------|
-| `appId` | `string` | **requerido** | ID de la app ("baco", "crm", "pim", etc.) |
+| `appId` | `string` | **requerido** | ID de la app ("baco", "nexo", "crm", etc.) |
 | `title` | `string` | **requerido** | Título visible |
 | `message` | `string` | **requerido** | Mensaje |
 | `type` | `'info' \| 'success' \| 'warning' \| 'error'` | `'info'` | Tipo visual |
 | `priority` | `'low' \| 'normal' \| 'high' \| 'urgent'` | `'normal'` | Prioridad (afecta orden) |
-| `targetUserId` | `string \| null` | `null` | null = broadcast a todo el tenant+app. String = solo ese usuario |
-| `targetRole` | `string \| null` | `null` | null = todos los roles. String = solo ese rol (ej: "admin") |
-| `actionUrl` | `string \| null` | `null` | Ruta a la que navegar al hacer clic (ej: "/barricas/B-001") |
-| `metadata` | `Record<string, unknown>` | `null` | Datos adicionales (ej: `{ barricaId: "B-001" }`) |
+| `targetUserId` | `string \| null` | `null` | null = broadcast. String = solo ese usuario (caso raro) |
+| `targetRole` | `string \| null` | `null` | Deprecado. Usar `metadata` para targeting app-specific |
+| `actionUrl` | `string \| null` | `null` | Ruta al hacer clic (ej: "/barricas/B-001") |
+| `metadata` | `Record<string, unknown>` | `null` | Targeting app-specific. Indexado con GIN. Ver sección **Targeting** |
 
 **Notas:**
 - `tenantId` y `createdBy` se toman del JWT automáticamente
-- La notificación expira automáticamente a los 7 días (broadcast) o cuando el usuario la lea (targeted)
+- La notificación expira a los 7 días (broadcast) o cuando el usuario lea (targeted)
 - El backend valida `appId`, `title` y `message` como strings no vacíos
 
 **Ejemplo completo:**
 
 ```typescript
 const notif = await api.create({
-  appId: 'baco',
+  appId: 'nexo',
   title: 'Nivel bajo detectado',
   message: 'La barrica B-042 tiene menos del 20% de capacidad',
   type: 'warning',
   priority: 'high',
-  targetRole: 'admin',
   actionUrl: '/barricas/B-042',
   metadata: { barricaId: 'B-042', nivel: 18 },
 });
@@ -131,29 +131,26 @@ const notif = await api.create({
 
 ### `getNotifications(filters?)` → `NotificationsResponse`
 
-Listar notificaciones. Por defecto retorna solo **no leídas** y **no eliminadas**, paginado de a 50.
+Listar notificaciones del usuario. Por defecto retorna solo **no leídas** y **no eliminadas**.
 
 | Filtro | Tipo | Default | Descripción |
 |--------|------|---------|-------------|
 | `appId` | `string` | — | Filtrar por app |
 | `unreadOnly` | `boolean` | `true` | Solo no leídas |
-| `includeDeleted` | `boolean` | `false` | Incluir eliminadas (para historial) |
+| `includeDeleted` | `boolean` | `false` | Incluir eliminadas |
 | `skip` | `number` | `0` | Offset |
 | `take` | `number` | `50` | Límite |
+| `metadata` | `MetadataFilter` | — | Filtrar broadcasts por metadata. Ver **Targeting** |
 
-**Ejemplo:**
+**Ejemplo con metadata:**
 
 ```typescript
 const result = await api.getNotifications({
-  appId: 'baco',
-  unreadOnly: false,     // incluir leídas
-  take: 20,              // primeras 20
+  appId: 'nexo',
+  metadata: { teamId: ['soporte', 'ti'] }, // OR: soporte O ti
+  unreadOnly: true,
+  take: 20,
 });
-
-console.log(`${result.total} notificaciones en total`);
-for (const n of result.notifications) {
-  console.log(`[${n.type}] ${n.title} — ${n.isRead ? 'leída' : 'no leída'}`);
-}
 ```
 
 **Respuesta:**
@@ -183,33 +180,34 @@ for (const n of result.notifications) {
 
 ---
 
-### `getHistory(filters?)` → `NotificationsResponse`
+### `getHistory(params)` → `NotificationsResponse`
 
-Obtener historial completo (incluye leídas + eliminadas). Es un wrapper que fuerza `unreadOnly=false` e `includeDeleted=true`.
+Historial paginado de notificaciones. Endpoint separado del backend (no confundir con `getNotifications`).
 
 ```typescript
-const historial = await api.getHistory({
-  appId: 'baco',
-  take: 100,
+const history = await api.getHistory({
+  appId: 'nexo',
+  metadata: { teamId: 'soporte' },
+  page: 1,
+  pageSize: 50,
+  includeDeleted: false,
 });
 ```
 
 ---
 
-### `getUnreadCount(appId?)` → `UnreadCountResponse`
+### `getUnreadCount(appId?, metadata?)` → `UnreadCountResponse`
 
-Contador de notificaciones no leídas para el badge de la campana.
+Contador de no leídas para badge. Soporta metadata filter.
 
 ```typescript
-const { count } = await api.getUnreadCount('baco');
-// count → 3
+const { count } = await api.getUnreadCount('nexo', { teamId: 'soporte' });
+// count → 3 (no leídas del equipo soporte)
 ```
 
 ---
 
 ### `markAsRead(notificationId)` → `{ success: boolean }`
-
-Marcar una notificación como leída.
 
 ```typescript
 await api.markAsRead('notif-uuid-123');
@@ -219,10 +217,10 @@ await api.markAsRead('notif-uuid-123');
 
 ### `markAllAsRead(appId?)` → `MarkAllReadResponse`
 
-Marcar todas las no leídas como leídas. Opcionalmente filtrado por app.
+Marca TODAS las no leídas como leídas. Opcionalmente filtrado por app (no por metadata — es intencional).
 
 ```typescript
-const result = await api.markAllAsRead('baco');
+const result = await api.markAllAsRead('nexo');
 console.log(`${result.markedCount} notificaciones marcadas`);
 ```
 
@@ -230,8 +228,7 @@ console.log(`${result.markedCount} notificaciones marcadas`);
 
 ### `delete(notificationId)` → `{ success: boolean }`
 
-Eliminar una notificación (soft delete). Solo el creador puede eliminar.
-Las notificaciones eliminadas por el sistema (sin `createdBy`) solo pueden ser eliminadas por el usuario objetivo.
+Soft delete. Solo el creador o el usuario objetivo pueden eliminar.
 
 ```typescript
 await api.delete('notif-uuid-123');
@@ -241,17 +238,94 @@ await api.delete('notif-uuid-123');
 
 ### `cleanup()` → `CleanupResponse`
 
-Limpiar notificaciones expiradas. **Requiere rol admin en "console"**.
+Limpia notificaciones expiradas. Solo requiere autenticación (JWT válido).
 
-Reglas de limpieza:
-- **Notificaciones dirigidas** (targetUserId != null): se borran cuando ese usuario leyó hace +7 días
-- **Notificaciones broadcast** (targetUserId = null): se borran cuando expira su fecha (7 días desde creación)
+**Reglas:**
+- **Targeted** (targetUserId != null): se borran cuando ese usuario leyó hace +7 días
+- **Broadcast** (targetUserId = null): se borran cuando expira su fecha (7 días)
 - **Soft-deleted**: se borran después de 7 días de retención
 - **Las no leídas nunca se borran automáticamente**
 
 ```typescript
 const result = await api.cleanup();
-// { deletedCount: 5, readExpiredCount: 3, broadcastExpiredCount: 1, softDeletedCount: 1, ... }
+// { deletedCount: 5, readExpiredCount: 3, broadcastExpiredCount: 1, ... }
+```
+
+---
+
+## Targeting de notificaciones
+
+El sistema usa **1 registro en BD por acción** (broadcast 1:N). El filtro se aplica en lectura, no en creación.
+
+### Broadcast (todos los usuarios del tenant+app)
+
+```typescript
+await api.create({
+  appId: 'nexo',
+  title: 'Mantenimiento programado',
+  // Sin metadata → visible para todos los usuarios del tenant+app
+});
+```
+
+### Usuario específico (caso raro 1:1)
+
+```typescript
+await api.create({
+  appId: 'nexo',
+  title: 'Te asignaron el ticket SUP-001',
+  targetUserId: 'user-uuid-123',  // solo este usuario
+});
+```
+
+### Por equipo (metadata app-specific)
+
+```typescript
+// Creación: la app agrega metadata con el ID del equipo
+await api.create({
+  appId: 'nexo',
+  title: 'Ticket SUP-001 asignado',
+  message: 'El ticket fue asignado al equipo Soporte',
+  metadata: { teamId: 'soporte' },  // ← app-specific
+});
+
+// Lectura: el usuario pasa sus equipos al filtro
+const result = await api.getNotifications({
+  appId: 'nexo',
+  metadata: { teamId: ['soporte', 'ti'] },  // OR: soporte O ti
+});
+```
+
+**¿Cómo funciona?**
+
+```
+CREACIÓN: 1 notif en BD con metadata: { teamId: 'soporte' }
+LECTURA:  El backend filtra:
+  WHERE targetUserId = 'pedro'           → personales
+     OR (targetUserId IS NULL AND (       → broadcasts
+          metadata IS NULL                → sin metadata = todos ven
+          OR metadata->'teamId' = 'soporte'  → coincide con equipo
+          OR metadata->'teamId' = 'ti'
+        ))
+```
+
+**Reglas:**
+- Broadcasts sin metadata → visibles para todos (legacy)
+- Broadcasts con metadata → visibles solo si coinciden con al menos un valor del filtro
+- Notificaciones personales (targetUserId) → siempre visibles sin importar metadata
+- La metadata puede tener cualquier estructura: `{ teamId, projectId, priority, etc. }`
+
+### Metadata multi-valor (OR)
+
+```typescript
+// Un usuario puede pertenecer a varios equipos
+const result = await api.getNotifications({
+  appId: 'nexo',
+  metadata: {
+    teamId: ['soporte', 'ti'],      // OR: teamId = soporte O ti
+    projectId: ['proyecto-alfa'],    // OR plano con teamId
+  },
+  // El OR es plano entre todos los valores de todas las keys
+});
 ```
 
 ---
@@ -260,18 +334,18 @@ const result = await api.cleanup();
 
 **Export:** `@tgtone/notifications-sdk/react`
 
-Hook que encapsula polling, badge count, mark read y delete para cualquier app.
+Hook que encapsula polling, badge count, mark read y delete. **No depende de ningún contexto de app** — recibe la instancia del SDK ya configurada.
 
 ### Props
 
 | Prop | Tipo | Default | Descripción |
 |------|------|---------|-------------|
-| `api` | `NotificationsAPI` | **requerido** | Instancia del SDK |
+| `api` | `NotificationsAPI` | **requerido** | Instancia del SDK (ya configurada con apiUrl + getToken) |
 | `appId` | `string` | **requerido** | appId a consultar |
-| `useHistory` | `boolean` | `false` | true = historial completo |
-| `includeDeleted` | `boolean` | `false` | true = incluir eliminadas |
-| `unreadOnly` | `boolean` | `false` | true = solo no leídas |
-| `pollingInterval` | `number` | `15000` | ms entre polls (solo en modo normal, no historial) |
+| `filter` | `UseNotificationsFilter` | — | Filtro de targeting: `{ metadata: { teamId: [...] } }` |
+| `limit` | `number` | `5` | Cantidad de notificaciones a mostrar |
+| `useHistory` | `boolean` | `false` | true = historial completo (incluye leídas + eliminadas) |
+| `pollingInterval` | `number` | `15000` | ms entre polls (solo en modo normal) |
 
 ### Retorno
 
@@ -281,29 +355,33 @@ Hook que encapsula polling, badge count, mark read y delete para cualquier app.
 | `unreadCount` | `number` | Conteo de no leídas |
 | `isLoading` | `boolean` | Cargando primera vez |
 | `error` | `string \| null` | Mensaje de error |
-| `markAsRead(id)` | `() => Promise<void>` | Marcar + optimistc update |
-| `markAllAsRead()` | `() => Promise<void>` | Marcar todas + optimistc update |
-| `deleteNotification(id)` | `() => Promise<void>` | Eliminar + optimistc update (oculta o marca isDeleted según modo) |
+| `markAsRead(id)` | `() => Promise<void>` | Marcar + optimistc update local |
+| `markAllAsRead()` | `() => Promise<void>` | Marcar todas + optimistc update local |
+| `deleteNotification(id)` | `() => Promise<void>` | Eliminar + optimistc update local |
 | `refresh()` | `() => Promise<void>` | Forzar recarga manual |
 
-### Ejemplo — NotificationCenter (campana + popover + badge)
+### Ejemplo — NotificationCenter por equipo
 
 ```typescript
 import { useState } from 'react';
 import { NotificationsAPI } from '@tgtone/notifications-sdk';
 import { useNotifications } from '@tgtone/notifications-sdk/react';
 
+// La app crea la instancia del SDK (una vez, al cargar)
 const api = new NotificationsAPI({
   apiUrl: import.meta.env.VITE_CORE_API_URL || '/api',
   getToken: () => localStorage.getItem('tgtone_auth_token'),
 });
 
-export function NotificationCenter() {
+export function NotificationCenter({ userId, teams }: { userId: string; teams: string[] }) {
   const [open, setOpen] = useState(false);
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications({
+  const { notifications, unreadCount, markAsRead, markAllAsRead, isLoading } = useNotifications({
     api,
-    appId: 'baco',
-    unreadOnly: true,
+    appId: 'nexo',
+    filter: {
+      metadata: { teamId: teams },  // ← la app pasa sus equipos
+    },
+    limit: 5,
   });
 
   return (
@@ -318,18 +396,24 @@ export function NotificationCenter() {
       </button>
 
       {open && (
-        <Popover>
+        <div className="w-80">
           {unreadCount > 0 && (
             <button onClick={markAllAsRead}>✓ Marcar todas</button>
           )}
-          {notifications.map(n => (
-            <div key={n.id} onClick={() => markAsRead(n.id)}>
-              <Icon type={n.type} />
-              <strong>{n.title}</strong>
-              <p>{n.message}</p>
-            </div>
-          ))}
-        </Popover>
+          {isLoading ? (
+            <p>Cargando...</p>
+          ) : notifications.length === 0 ? (
+            <p>No tienes notificaciones</p>
+          ) : (
+            notifications.map(n => (
+              <div key={n.id} onClick={() => markAsRead(n.id)}
+                   className={!n.read ? 'bg-muted/30' : ''}>
+                <strong>{n.title}</strong>
+                <p className="text-sm text-muted-foreground">{n.message}</p>
+              </div>
+            ))
+          )}
+        </div>
       )}
     </div>
   );
@@ -340,7 +424,7 @@ export function NotificationCenter() {
 
 ## Integración desde backend (BFF)
 
-Cada app necesita un servicio para enviar notificaciones desde su backend. Ejemplo para Express/Bun:
+Cada app necesita un servicio para enviar notificaciones:
 
 ```typescript
 // services/notifications.service.ts
@@ -364,21 +448,23 @@ import { createNotificationsService } from '../services/notifications.service';
 
 app.post('/api/trasiegos', async (req, res) => {
   const trasiego = await crearTrasiego(req.body);
-
   const notifService = createNotificationsService(req);
+
+  // 1 notif en BD, toda la app la ve (broadcast)
   await notifService.create({
     appId: 'baco',
     title: 'Trasiego completado',
     message: `Barrica ${trasiego.barricaId} lista`,
     type: 'success',
     actionUrl: `/barricas/${trasiego.barricaId}`,
+    metadata: { barricaId: trasiego.barricaId },
   });
 
   res.json(trasiego);
 });
 ```
 
-> **Nota:** El token JWT debe pertenecer a un usuario del tenant donde se crea la notificación. Para notificaciones de sistema (sin usuario), se requiere una API Key. Contacta al equipo de core backend para habilitar esta opción.
+> **Nota:** El token JWT debe pertenecer a un usuario del tenant. Para notificaciones de sistema (sin usuario), se requiere API Key. Contacta al equipo de core.
 
 ---
 
@@ -395,14 +481,11 @@ try {
   if (err instanceof NotificationsError) {
     switch (err.statusCode) {
       case 401:
-        console.log('Token inválido o expirado');
-        break;
+        console.log('Token inválido o expirado'); break;
       case 400:
-        console.log('Error de validación:', err.details);
-        break;
+        console.log('Error de validación:', err.details); break;
       case 404:
-        console.log('No encontrado');
-        break;
+        console.log('No encontrado'); break;
       default:
         console.log(`Error ${err.statusCode}: ${err.message}`);
     }
@@ -410,67 +493,23 @@ try {
 }
 ```
 
-### Métodos helper del error
-
-| Método | Descripción |
-|--------|-------------|
+| Método helper | Descripción |
+|---------------|-------------|
 | `err.isUnauthorized()` | `statusCode === 401` |
 | `err.isNotFound()` | `statusCode === 404` |
 | `err.isValidationError()` | `statusCode === 400` |
 
 ---
 
-## Targeting de notificaciones
-
-### Broadcast (todos los usuarios del tenant+app)
-
-```typescript
-await api.create({
-  appId: 'baco',
-  title: 'Mantenimiento programado',
-  message: 'El sistema estará fuera de servicio el sábado',
-  type: 'info',
-  // Sin targetUserId ni targetRole → broadcast
-});
-```
-
-### Usuario específico
-
-```typescript
-await api.create({
-  appId: 'baco',
-  title: 'Barrica asignada',
-  message: 'Te asignaron la barrica B-050',
-  type: 'info',
-  targetUserId: 'user-uuid-123',  // ← solo este usuario la ve
-});
-```
-
-### Por rol
-
-```typescript
-await api.create({
-  appId: 'baco',
-  title: 'Reporte mensual',
-  message: 'El reporte de inventario está listo',
-  type: 'info',
-  targetRole: 'admin',  // ← solo admins la ven
-});
-```
-
-> ⚠️ `targetRole` filtra según los roles que el usuario tenga en el JWT para la app consultada. Si el JWT no tiene roles, se comporta como broadcast.
-
----
-
 ## Buenas prácticas
 
-1. **Siempre pasar `appId`** en filtros — cada app tiene su propio espacio de notificaciones
-2. **Usar `actionUrl`** para que el usuario pueda navegar al recurso relevante
-3. **Usar `type` y `priority`** para que la UI muestre el icono y orden correctos
-4. **No leer el `expiresAt`** — el backend lo maneja automáticamente (7 días)
-5. **Mantener el polling** en el frontend (15s default) — es eficiente: ~1920 requests/día por usuario
-6. **Para críticas**, considerar sonido/vibración en la UI cuando `type: 'error'` o `priority: 'urgent'`
-7. **Para notificaciones de sistema** (sin JWT de usuario), contactar al equipo de core para habilitar API Key
+1. **Siempre pasar `appId`** en filtros — cada app tiene su espacio de notificaciones
+2. **Usar `actionUrl`** para que el usuario navegue al recurso
+3. **Metadata para targeting app-specific** — cada app define sus propios filtros
+4. **No abusar de `targetUserId`** — el sistema es 1:N, no 1:1. Preferir broadcast + metadata
+5. **Polling 15s default** — eficiente (~1920 requests/día por usuario con badge)
+6. **Para estados vacíos**, mostrar mensaje claro ("No tienes notificaciones")
+7. **Para críticas**, considerar sonido/vibración cuando `type: 'error'` o `priority: 'urgent'`
 
 ---
 
@@ -485,9 +524,7 @@ await api.create({
 
 ---
 
-## ¿Cómo migrar desde @tgtone/core-sdk?
-
-Si tu app actualmente usa `core.notifications.*` desde `@tgtone/core-sdk`:
+## Migración desde @tgtone/core-sdk
 
 ```typescript
 // ANTES
@@ -499,6 +536,26 @@ await core.notifications.create({ appId, title, message });
 import { NotificationsAPI } from '@tgtone/notifications-sdk';
 const api = new NotificationsAPI({ apiUrl, getToken });
 await api.create({ appId, title, message });
+```
+
+---
+
+## Tipos exportados
+
+```typescript
+import type {
+  Notification,           // Notificación completa (respuesta del backend)
+  CreateNotificationDto,  // DTO para crear
+  NotificationFilters,    // Filtros para listar (incluye metadata)
+  GetHistoryParams,       // Parámetros para historial paginado
+  NotificationsResponse,  // Respuesta paginada
+  UnreadCountResponse,    // { count: number }
+  MarkAllReadResponse,    // { success, markedCount }
+  CleanupResponse,        // { success, deletedCount, ... }
+  MetadataFilter,         // { [key: string]: string | string[] }
+  NotificationType,       // 'info' | 'success' | 'warning' | 'error'
+  NotificationPriority,   // 'low' | 'normal' | 'high' | 'urgent'
+} from '@tgtone/notifications-sdk';
 ```
 
 ---
