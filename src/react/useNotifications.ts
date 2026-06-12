@@ -1,24 +1,23 @@
 /**
  * Hook de React para consumir notificaciones desde cualquier app del ecosistema TGT One.
  *
- * Reemplaza la necesidad de que cada app implemente su propio hook con polling.
- *
  * @example
  * ```typescript
  * import { NotificationsAPI } from '@tgtone/notifications-sdk';
  * import { useNotifications } from '@tgtone/notifications-sdk/react';
  *
  * function NotifBell() {
- *   const api = new NotificationsAPI({
- *     apiUrl: 'https://tgtone-console-backend.run.app/api',
- *     getToken: () => localStorage.getItem('tgtone_auth_token'),
- *   });
- *
- *   const { notifications, unreadCount, isLoading } = useNotifications({
- *     api,
+ *   const { unreadCount } = useNotifications({
+ *     api: new NotificationsAPI({
+ *       apiUrl: 'https://tgtone-console-backend.run.app/api',
+ *       getToken: () => localStorage.getItem('tgtone_auth_token'),
+ *     }),
  *     appId: 'baco',
+ *     filter: {
+ *       metadata: { teamId: ['soporte', 'ti'] }, // app-specific
+ *     },
+ *     limit: 5,
  *   });
- *
  *   return <Badge>{unreadCount}</Badge>;
  * }
  * ```
@@ -26,7 +25,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { NotificationsAPI } from '../notifications';
-import type { Notification as SDKNotification } from '../types';
+import type { Notification as SDKNotification, MetadataFilter } from '../types';
 
 // ── Tipos exportados ────────────────
 
@@ -36,7 +35,6 @@ export interface UseNotificationItem {
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
   priority: 'low' | 'normal' | 'high' | 'urgent';
-  /** Mapeado desde isRead del backend para compatibilidad */
   read: boolean;
   actionUrl?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -45,24 +43,24 @@ export interface UseNotificationItem {
   deletedAt?: Date | null;
 }
 
+export interface UseNotificationsFilter {
+  /** Filtro por metadata (app-specific: teamId, projectId, etc.) */
+  metadata?: MetadataFilter;
+}
+
 export interface UseNotificationsOptions {
-  /** Instancia del SDK ya configurada con apiUrl + getToken */
+  /** Instancia del SDK ya configurada */
   api: NotificationsAPI;
-
-  /** appId a filtrar (ej: "baco", "crm") */
+  /** appId a consultar */
   appId: string;
-
+  /** Filtro de targeting (metadata app-specific) */
+  filter?: UseNotificationsFilter;
+  /** Cantidad de notificaciones a mostrar (default: 5) */
+  limit?: number;
+  /** Intervalo de polling en ms (default: 15000) */
+  pollingInterval?: number;
   /** true = mostrar historial completo (incluye leídas + eliminadas) */
   useHistory?: boolean;
-
-  /** true = incluir eliminadas en getNotifications */
-  includeDeleted?: boolean;
-
-  /** true = solo no leídas (default en modo normal) */
-  unreadOnly?: boolean;
-
-  /** Intervalo de polling en ms (default: 15000, solo en modo normal) */
-  pollingInterval?: number;
 }
 
 export interface UseNotificationsReturn {
@@ -82,17 +80,16 @@ export function useNotifications(options: UseNotificationsOptions): UseNotificat
   const {
     api,
     appId,
-    useHistory = false,
-    includeDeleted = false,
-    unreadOnly = false,
+    filter,
+    limit = 5,
     pollingInterval = 15000,
+    useHistory = false,
   } = options;
 
   const [notifications, setNotifications] = useState<UseNotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /** Mapea respuesta del backend al tipo del hook */
   const mapItem = (n: SDKNotification): UseNotificationItem => ({
     id: n.id,
     title: n.title,
@@ -116,21 +113,23 @@ export function useNotifications(options: UseNotificationsOptions): UseNotificat
           appId,
           unreadOnly: false,
           includeDeleted: true,
+          metadata: filter?.metadata,
+          take: limit * 2, // traer un poco más para filtrar en cliente
         });
       } else {
         response = await api.getNotifications({
           appId,
-          unreadOnly,
-          includeDeleted,
+          unreadOnly: true,
+          metadata: filter?.metadata,
+          take: limit * 2,
         });
       }
 
       const mapped: UseNotificationItem[] = (response.notifications || []).map(mapItem);
-      setNotifications(mapped);
+      setNotifications(mapped.slice(0, limit));
       setError(null);
     } catch (err) {
       const errMsg = (err as Error).message || '';
-      // Si es error de token, no mostrar error visual (el auth flow lo maneja)
       if (errMsg.includes('Invalid or expired token') || errMsg.includes('Unauthorized')) {
         return;
       }
@@ -139,9 +138,7 @@ export function useNotifications(options: UseNotificationsOptions): UseNotificat
     } finally {
       setIsLoading(false);
     }
-  }, [api, appId, useHistory, includeDeleted, unreadOnly]);
-
-  // ── Actions ──
+  }, [api, appId, useHistory, filter?.metadata, limit]);
 
   const markAsRead = useCallback(async (id: string) => {
     try {
@@ -157,7 +154,9 @@ export function useNotifications(options: UseNotificationsOptions): UseNotificat
   const markAllAsRead = useCallback(async () => {
     try {
       await api.markAllAsRead(appId);
-      setNotifications((prev: UseNotificationItem[]) => prev.map((n: UseNotificationItem) => ({ ...n, read: true })));
+      setNotifications((prev: UseNotificationItem[]) =>
+        prev.map((n: UseNotificationItem) => ({ ...n, read: true }))
+      );
     } catch (err) {
       console.warn('[Notifications] Error marking all as read:', err);
     }
@@ -168,22 +167,24 @@ export function useNotifications(options: UseNotificationsOptions): UseNotificat
       await api.delete(id);
       if (useHistory) {
         setNotifications((prev: UseNotificationItem[]) =>
-          prev.map((n: UseNotificationItem) => (n.id === id ? { ...n, isDeleted: true, deletedAt: new Date() } : n))
+          prev.map((n: UseNotificationItem) =>
+            n.id === id ? { ...n, isDeleted: true, deletedAt: new Date() } : n
+          )
         );
       } else {
-        setNotifications((prev: UseNotificationItem[]) => prev.filter((n: UseNotificationItem) => n.id !== id));
+        setNotifications((prev: UseNotificationItem[]) =>
+          prev.filter((n: UseNotificationItem) => n.id !== id)
+        );
       }
     } catch (err) {
       console.warn('[Notifications] Error deleting:', err);
     }
   }, [api, useHistory]);
 
-  // ── Initial fetch ──
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  // ── Polling ──
   useEffect(() => {
     if (useHistory) return;
     const interval = setInterval(fetchNotifications, pollingInterval);

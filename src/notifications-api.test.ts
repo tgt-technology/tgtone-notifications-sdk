@@ -167,16 +167,37 @@ describe('NotificationsAPI', () => {
 
   // ── getHistory ────────────────────────────────────────────────
   describe('getHistory', () => {
-    test('forces includeDeleted=true and unreadOnly=false', async () => {
+    test('sends GET to /history with appId and page params', async () => {
       setupMock()
 
       const api = createAPI()
-      await api.getHistory({ appId: 'baco' })
+      await api.getHistory({ appId: 'baco', page: 1, pageSize: 50 })
 
       const url = fetchCalls[0].url
-      expect(url).toContain('includeDeleted=true')
-      expect(url).toContain('unreadOnly=false')
+      expect(url).toContain('/history')
       expect(url).toContain('appId=baco')
+      expect(url).toContain('page=1')
+      expect(url).toContain('pageSize=50')
+    })
+
+    test('includes metadata filter in history query', async () => {
+      setupMock()
+
+      const api = createAPI()
+      await api.getHistory({ appId: 'baco', metadata: { teamId: 'soporte' } })
+
+      const url = fetchCalls[0].url
+      expect(url).toContain('metadata.teamId=soporte')
+    })
+
+    test('multi-value metadata in history query', async () => {
+      setupMock()
+
+      const api = createAPI()
+      await api.getHistory({ appId: 'baco', metadata: { teamId: ['soporte', 'ti'] } })
+
+      const url = fetchCalls[0].url
+      expect(url).toContain('metadata.teamId=soporte%2Cti') // coma-separado URL-encoded
     })
   })
 

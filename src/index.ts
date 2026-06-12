@@ -44,4 +44,6 @@ export type {
   UnreadCountResponse,
   MarkAllReadResponse,
   CleanupResponse,
+  MetadataFilter,
+  GetHistoryParams,
 } from './types';

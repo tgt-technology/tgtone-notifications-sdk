@@ -7,22 +7,45 @@ import type {
   UnreadCountResponse,
   MarkAllReadResponse,
   CleanupResponse,
+  GetHistoryParams,
+  MetadataFilter,
 } from './types';
+
+/**
+ * Convierte MetadataFilter a query params planos.
+ *
+ * Para arrays usa coma-separado: { teamId: ['soporte', 'ti'] }
+ * → metadata.teamId=soporte,ti
+ * El backend parsea separando por coma.
+ */
+function serializeMetadata(metadata?: MetadataFilter): Record<string, string> {
+  if (!metadata) return {};
+  const params: Record<string, string> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    const prefix = `metadata.${key}`;
+    if (Array.isArray(value)) {
+      params[prefix] = value.join(',');  // coma-separado
+    } else {
+      params[prefix] = value;
+    }
+  }
+  return params;
+}
 
 /**
  * API para gestión de Notificaciones
  *
  * ENDPOINTS DISPONIBLES EN BACKEND:
  * - POST   /api/v1/notifications            - Crear notificación
- * - GET    /api/v1/notifications            - Listar notificaciones (no leídas por defecto)
+ * - GET    /api/v1/notifications            - Listar notificaciones
+ * - GET    /api/v1/notifications/history    - Historial paginado
  * - GET    /api/v1/notifications/unread-count - Contador para badge
  * - PUT    /api/v1/notifications/:id/read   - Marcar como leída
  * - PUT    /api/v1/notifications/read-all   - Marcar todas como leídas
- * - DELETE /api/v1/notifications/:id        - Eliminar notificación (soft)
- * - POST   /api/v1/notifications/cleanup    - Limpiar notificaciones expiradas (admin)
+ * - DELETE /api/v1/notifications/:id        - Eliminar notificación
+ * - POST   /api/v1/notifications/cleanup    - Limpiar expiradas (admin)
  *
  * NOTA: tenantId y createdBy se toman del JWT automáticamente.
- * NO se deben enviar en los métodos del SDK.
  */
 export class NotificationsAPI extends NotificationsClient {
   private readonly BASE = '/api/v1/notifications';
@@ -32,19 +55,14 @@ export class NotificationsAPI extends NotificationsClient {
   }
 
   /**
-   * Crear una nueva notificación
+   * Crear una nueva notificación (broadcast 1:N)
    *
-   * Backend: POST /api/v1/notifications
-   *
-   * @example
+   * Usar metadata para targeting app-specific:
    * ```typescript
-   * const notif = await notifications.create({
-   *   appId: 'baco',
-   *   title: 'Trasiego completado',
-   *   message: 'El trasiego de la barrica B-001 ha sido completado',
-   *   type: 'success',
-   *   actionUrl: '/barricas/B-001',
-   *   metadata: { barricaId: 'uuid-xxx' }
+   * await api.create({
+   *   appId: 'nexo',
+   *   title: 'Ticket asignado',
+   *   metadata: { teamId: 'soporte' }, // app-specific
    * });
    * ```
    */
@@ -53,18 +71,15 @@ export class NotificationsAPI extends NotificationsClient {
   }
 
   /**
-   * Obtener notificaciones del usuario
+   * Obtener notificaciones para el usuario.
    *
-   * Backend: GET /api/v1/notifications
-   *
-   * @param filters - Filtros opcionales (appId, unreadOnly, includeDeleted, skip, take)
-   *
-   * @example
+   * El filtro por metadata permite targeting app-specific:
    * ```typescript
-   * const result = await notifications.getNotifications({
-   *   appId: 'baco',
+   * const result = await api.getNotifications({
+   *   appId: 'nexo',
+   *   metadata: { teamId: ['soporte', 'ti'] }, // OR
    *   unreadOnly: true,
-   *   take: 20
+   *   take: 5,
    * });
    * ```
    */
@@ -77,54 +92,58 @@ export class NotificationsAPI extends NotificationsClient {
     if (filters?.skip !== undefined) params.skip = filters.skip.toString();
     if (filters?.take !== undefined) params.take = filters.take.toString();
 
+    // Serializar metadata filter
+    const metaParams = serializeMetadata(filters?.metadata);
+    Object.assign(params, metaParams);
+
     return this.fetchGet<NotificationsResponse>(this.BASE, params);
   }
 
   /**
-   * Obtener historial completo de notificaciones (incluye leídas y eliminadas)
+   * Obtener historial paginado de notificaciones.
    *
-   * Backend: GET /api/v1/notifications con includeDeleted=true, unreadOnly=false
-   *
-   * @param filters - Filtros opcionales (sin unreadOnly/includeDeleted — se fuerzan)
-   *
-   * @example
-   * ```typescript
-   * const result = await notifications.getHistory({ appId: 'baco', take: 100 });
-   * ```
+   ```typescript
+   const history = await api.getHistory({
+     appId: 'nexo',
+     metadata: { teamId: 'soporte' },
+     page: 1,
+     pageSize: 50,
+   });
+   ```
    */
-  async getHistory(filters?: Omit<NotificationFilters, 'unreadOnly' | 'includeDeleted'>): Promise<NotificationsResponse> {
-    return this.getNotifications({
-      ...filters,
-      unreadOnly: false,
-      includeDeleted: true,
-    });
+  async getHistory(params: GetHistoryParams): Promise<NotificationsResponse> {
+    const query: Record<string, string> = {};
+
+    query.appId = params.appId;
+    if (params.page !== undefined) query.page = params.page.toString();
+    if (params.pageSize !== undefined) query.pageSize = params.pageSize.toString();
+    if (params.includeDeleted !== undefined) query.includeDeleted = params.includeDeleted.toString();
+
+    // Serializar metadata filter
+    const metaParams = serializeMetadata(params.metadata);
+    Object.assign(query, metaParams);
+
+    return this.fetchGet<NotificationsResponse>(`${this.BASE}/history`, query);
   }
 
   /**
    * Obtener contador de notificaciones no leídas (para badge)
    *
-   * Backend: GET /api/v1/notifications/unread-count
-   *
-   * @param appId - Filtrar por app (opcional)
-   *
-   * @example
-   * ```typescript
-   * const { count } = await notifications.getUnreadCount('baco');
-   * ```
+   * @param appId - Filtrar por app
+   * @param metadata - Filtro adicional por metadata (opcional)
    */
-  async getUnreadCount(appId?: string): Promise<UnreadCountResponse> {
+  async getUnreadCount(appId?: string, metadata?: MetadataFilter): Promise<UnreadCountResponse> {
     const params: Record<string, string> = {};
-    if (appId !== undefined) params.appId = appId;
+    if (appId) params.appId = appId;
+
+    const metaParams = serializeMetadata(metadata);
+    Object.assign(params, metaParams);
 
     return this.fetchGet<UnreadCountResponse>(`${this.BASE}/unread-count`, params);
   }
 
   /**
    * Marcar una notificación como leída
-   *
-   * Backend: PUT /api/v1/notifications/:id/read
-   *
-   * @param notificationId - ID de la notificación
    */
   async markAsRead(notificationId: string): Promise<{ success: boolean }> {
     return this.fetchPut<{ success: boolean }>(`${this.BASE}/${notificationId}/read`, {});
@@ -133,14 +152,7 @@ export class NotificationsAPI extends NotificationsClient {
   /**
    * Marcar todas las notificaciones como leídas
    *
-   * Backend: PUT /api/v1/notifications/read-all
-   *
    * @param appId - Filtrar por app (opcional)
-   *
-   * @example
-   * ```typescript
-   * const result = await notifications.markAllAsRead('baco');
-   * ```
    */
   async markAllAsRead(appId?: string): Promise<MarkAllReadResponse> {
     const params: Record<string, string> = {};
@@ -152,10 +164,6 @@ export class NotificationsAPI extends NotificationsClient {
 
   /**
    * Eliminar una notificación (solo el creador puede eliminar)
-   *
-   * Backend: DELETE /api/v1/notifications/:id
-   *
-   * @param notificationId - ID de la notificación
    */
   async delete(notificationId: string): Promise<{ success: boolean }> {
     return this.fetchDelete<{ success: boolean }>(`${this.BASE}/${notificationId}`);
@@ -163,12 +171,6 @@ export class NotificationsAPI extends NotificationsClient {
 
   /**
    * Limpiar notificaciones expiradas (admin/maintenance)
-   *
-   * Backend: POST /api/v1/notifications/cleanup
-   *
-   * Elimina notificaciones leídas hace más de 7 días
-   * y notificaciones soft-deleted hace más de 7 días.
-   * Las notificaciones NO LEÍDAS nunca se borran.
    */
   async cleanup(): Promise<CleanupResponse> {
     return this.fetchPost<CleanupResponse>(`${this.BASE}/cleanup`);

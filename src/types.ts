@@ -6,6 +6,22 @@ export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 export type NotificationPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 /**
+ * Filtro por metadata. Cada key puede ser:
+ * - string: coincide exactamente con ese valor
+ * - string[]: OR entre los valores (metadata.campo IN valores)
+ *
+ * @example
+ * ```typescript
+ * // Una notificación con { teamId: 'soporte' } matchea ambos:
+ * const filter1: MetadataFilter = { teamId: 'soporte' };
+ * const filter2: MetadataFilter = { teamId: ['soporte', 'ti'] }; // OR
+ * ```
+ */
+export interface MetadataFilter {
+  [key: string]: string | string[];
+}
+
+/**
  * Notificación completa (respuesta del backend)
  */
 export interface Notification {
@@ -28,31 +44,14 @@ export interface Notification {
  * DTO para crear notificaciones
  */
 export interface CreateNotificationDto {
-  /** ID de la app que envía la notificación ("baco", "crm", etc.) */
   appId: string;
-
-  /** Título de la notificación */
   title: string;
-
-  /** Mensaje/contenido de la notificación */
   message: string;
-
-  /** Tipo de notificación (default: 'info') */
   type?: NotificationType;
-
-  /** Prioridad (default: 'normal') */
   priority?: NotificationPriority;
-
-  /** ID de usuario específico (null = todos los usuarios del tenant+app) */
   targetUserId?: string;
-
-  /** Rol específico (null = todos los roles) */
   targetRole?: string;
-
-  /** URL a la que navegar al hacer clic */
   actionUrl?: string;
-
-  /** Datos adicionales (ej: { barricaId: "xxx" }) */
   metadata?: Record<string, unknown>;
 }
 
@@ -60,20 +59,28 @@ export interface CreateNotificationDto {
  * Filtros para obtener notificaciones
  */
 export interface NotificationFilters {
-  /** Filtrar por app específica */
   appId?: string;
-
-  /** Solo notificaciones no leídas (default: true en backend) */
   unreadOnly?: boolean;
-
-  /** Incluir notificaciones eliminadas (soft delete) - para historial */
   includeDeleted?: boolean;
-
-  /** Offset para paginación */
   skip?: number;
-
-  /** Límite de resultados */
   take?: number;
+  /** Filtrar broadcasts por metadata (JSON indexado con GIN) */
+  metadata?: MetadataFilter;
+}
+
+/**
+ * Parámetros para historial paginado
+ */
+export interface GetHistoryParams {
+  appId: string;
+  /** Filtro por metadata */
+  metadata?: MetadataFilter;
+  /** Número de página (default: 1) */
+  page?: number;
+  /** Items por página (default: 50) */
+  pageSize?: number;
+  /** Incluir eliminadas (default: false) */
+  includeDeleted?: boolean;
 }
 
 /**
