@@ -20,8 +20,22 @@ Crea, lista, marca como leídas y elimina notificaciones desde cualquier app del
 
 ## Instalación
 
+### npm
+
 ```bash
 npm install @tgtone/notifications-sdk
+```
+
+### Bun
+
+```bash
+bun add @tgtone/notifications-sdk
+```
+
+### Yarn
+
+```bash
+yarn add @tgtone/notifications-sdk
 ```
 
 ---
@@ -540,6 +554,82 @@ await api.create({ appId, title, message });
 
 ---
 
+## Arquitectura: ¿qué va en backend y qué en frontend?
+
+El SDK se usa **en ambos lados**, pero con responsabilidades distintas.
+
+### Backend (BFF) → Crear notificaciones
+
+Las notificaciones que representan **eventos de negocio** (trasiego completado, stock bajo, ticket asignado) se crean **exclusivamente desde el backend** de cada app. El frontend no decide ni ejecuta la creación de notificaciones de negocio.
+
+**¿Por qué no desde el frontend?**
+
+| Motivo | Explicación |
+|--------|-------------|
+| **Seguridad** | El backend inyecta `tenantId` y `createdBy` desde el JWT ya verificado. Si el frontend creara notificaciones, un usuario con DevTools podría forjar notificaciones falsas cambiando title, type, message. |
+| **Atomicidad** | La notificación se crea si y solo si la operación de negocio se completó. Sin ventana de inconsistencia entre "el dato se guardó" y "aviso a los usuarios". |
+| **Eventos async** | Muchas notificaciones (suscripción expiró, integración caída, stock mínimo) se originan en **workers, schedulers o webhooks** donde no hay frontend presente. |
+| **Trazabilidad** | `createdBy` se registra con el usuario que ejecutó la acción. Si el frontend creara la notif, sería el token del usuario actual, no de quien originó el evento. |
+
+**Flujo correcto:**
+
+```
+Frontend            Backend (BFF)                   Core API
+   │                    │                              │
+   │  POST /api/accion  │                              │
+   │───────────────────>│                              │
+   │                    │  Ejecuta operación           │
+   │                    │  api.create({ appId, ... })  │
+   │                    │─────────────────────────────>│
+   │                    │                              1 registro en BD
+   │  200 OK            │                              │
+   │<───────────────────│                              │
+```
+
+El backend llama al SDK **después** de ejecutar la operación, como parte del mismo handler.
+
+### Frontend (React) → Leer y mostrar
+
+El frontend usa el SDK **solo para lectura y acciones del usuario sobre sus propias notificaciones**:
+
+| Operación | Método del SDK | ¿Por qué acá? |
+|-----------|---------------|---------------|
+| Badge con conteo | `getUnreadCount()` | El usuario quiere ver cuántas notis tiene sin recargar |
+| Listar últimas N | `getNotifications()` | Campana/popover con las últimas 5 notificaciones |
+| Marcar como leída | `markAsRead()` | Acción del usuario sobre su propia notificación |
+| Marcar todas leídas | `markAllAsRead()` | Acción del usuario, no afecta a otros |
+| Eliminar (soft delete) | `delete()` | El usuario elimina su propia notificación |
+| Historial paginado | `getHistory()` | Página dedicada con todo el historial |
+
+**No se usa en frontend para crear notificaciones de negocio.**
+
+### Configuración de CORE_API_URL
+
+El SDK necesita la URL del Core API. Dónde se configura depende del lado:
+
+**En backend (BFF):**
+```typescript
+const CORE_API_URL = process.env.CORE_API_URL!;     // Node.js
+// o
+const CORE_API_URL = Bun.env.CORE_API_URL!;          // Bun
+```
+
+Configurar como variable de entorno en el servidor. Ejemplo `.env`:
+```bash
+CORE_API_URL=https://tgtone-console-backend.run.app/api
+```
+
+**En frontend (React):**
+```typescript
+const apiUrl = import.meta.env.VITE_CORE_API_URL || '/api';
+```
+
+Usar el prefijo `VITE_` (Vite) o `REACT_APP_` (CRA). Si el frontend se sirve desde el mismo dominio que el backend (proxy inverso), se puede usar `'/api'` como ruta relativa.
+
+> **Frontend y CORS:** Si el frontend apunta directamente al Core API (sin pasar por un proxy BFF), el Core API debe tener CORS habilitado para el dominio del frontend. Verificar con el equipo de infra si es necesario.
+
+---
+
 ## Tipos exportados
 
 ```typescript
@@ -557,6 +647,29 @@ import type {
   NotificationPriority,   // 'low' | 'normal' | 'high' | 'urgent'
 } from '@tgtone/notifications-sdk';
 ```
+
+---
+
+## Publicar en npm
+
+```bash
+# 1. Build
+npm run build
+
+# 2. Verificar que empaqueta solo lo necesario
+npm pack --dry-run
+
+# 3. Publicar
+npm publish
+
+# Para publicar una nueva versión:
+# 1. Cambiar version en package.json (patch | minor | major)
+# 2. Actualizar CHANGELOG.md
+# 3. npm run build
+# 4. npm publish
+```
+
+> ⚠️ Requiere `npm login` previo con una cuenta que tenga acceso al paquete `@tgtone/notifications-sdk`.
 
 ---
 
