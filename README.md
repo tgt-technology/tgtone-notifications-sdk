@@ -49,7 +49,7 @@ import { NotificationsAPI } from '@tgtone/notifications-sdk';
 
 // Instancia con el JWT del usuario que hace la request
 const api = new NotificationsAPI({
-  apiUrl: 'https://tgtone-console-backend.run.app/api',
+  apiUrl: 'https://tgtone-console-backend.run.app',
   getToken: () => req.headers.authorization?.replace('Bearer ', '') || null,
 });
 
@@ -69,10 +69,11 @@ await api.create({
 ```typescript
 import { NotificationsAPI } from '@tgtone/notifications-sdk';
 import { useNotifications } from '@tgtone/notifications-sdk/react';
+import { TGTAuthClient } from '@tgtone/auth-sdk';
 
 const api = new NotificationsAPI({
   apiUrl: import.meta.env.VITE_CORE_API_URL || '/api',
-  getToken: () => localStorage.getItem('tgtone_auth_token'),
+  getToken: () => TGTAuthClient.getStoredToken(),
 });
 
 function NotifBell() {
@@ -98,7 +99,7 @@ function NotifBell() {
 
 | Parámetro | Tipo | Default | Descripción |
 |-----------|------|---------|-------------|
-| `apiUrl` | `string` | **requerido** | URL base del Core API (ej: `https://tgtone-console-backend.run.app/api`) |
+| `apiUrl` | `string` | **requerido** | URL base del Core API. ⚠️ **Sin `/api` al final** — el SDK agrega `/api/v1/notifications` automáticamente. Ej: `https://tgtone-console-backend.run.app` |
 | `getToken` | `() => string \| null` | **requerido** | Función que retorna el JWT (sin "Bearer") |
 | `timeout` | `number` | `30000` | Timeout por request en ms |
 | `headers` | `Record<string, string>` | `{}` | Headers adicionales |
@@ -380,11 +381,12 @@ Hook que encapsula polling, badge count, mark read y delete. **No depende de nin
 import { useState } from 'react';
 import { NotificationsAPI } from '@tgtone/notifications-sdk';
 import { useNotifications } from '@tgtone/notifications-sdk/react';
+import { TGTAuthClient } from '@tgtone/auth-sdk';
 
 // La app crea la instancia del SDK (una vez, al cargar)
 const api = new NotificationsAPI({
   apiUrl: import.meta.env.VITE_CORE_API_URL || '/api',
-  getToken: () => localStorage.getItem('tgtone_auth_token'),
+  getToken: () => TGTAuthClient.getStoredToken(),
 });
 
 export function NotificationCenter({ userId, teams }: { userId: string; teams: string[] }) {
@@ -517,13 +519,14 @@ try {
 
 ## Buenas prácticas
 
-1. **Siempre pasar `appId`** en filtros — cada app tiene su espacio de notificaciones
-2. **Usar `actionUrl`** para que el usuario navegue al recurso
-3. **Metadata para targeting app-specific** — cada app define sus propios filtros
-4. **No abusar de `targetUserId`** — el sistema es 1:N, no 1:1. Preferir broadcast + metadata
-5. **Polling 15s default** — eficiente (~1920 requests/día por usuario con badge)
-6. **Para estados vacíos**, mostrar mensaje claro ("No tienes notificaciones")
-7. **Para críticas**, considerar sonido/vibración cuando `type: 'error'` o `priority: 'urgent'`
+1. **Usar `TGTAuthClient.getStoredToken()`** en lugar de `localStorage.getItem('tgtone_auth_token')` para obtener el token — si auth-sdk cambia la key o mecanismo de storage, tu app se adapta automáticamente sin cambios
+2. **Siempre pasar `appId`** en filtros — cada app tiene su espacio de notificaciones
+3. **Usar `actionUrl`** para que el usuario navegue al recurso
+4. **Metadata para targeting app-specific** — cada app define sus propios filtros
+5. **No abusar de `targetUserId`** — el sistema es 1:N, no 1:1. Preferir broadcast + metadata
+6. **Polling 15s default** — eficiente (~1920 requests/día por usuario con badge)
+7. **Para estados vacíos**, mostrar mensaje claro ("No tienes notificaciones")
+8. **Para críticas**, considerar sonido/vibración cuando `type: 'error'` o `priority: 'urgent'`
 
 ---
 
@@ -616,8 +619,10 @@ const CORE_API_URL = Bun.env.CORE_API_URL!;          // Bun
 
 Configurar como variable de entorno en el servidor. Ejemplo `.env`:
 ```bash
-CORE_API_URL=https://tgtone-console-backend.run.app/api
+CORE_API_URL=https://tgtone-console-backend.run.app
 ```
+
+> ⚠️ `apiUrl` del SDK **no debe incluir `/api`** al final. El SDK concatena `/api/v1/notifications` automáticamente. Ej: con `CORE_API_URL=https://tgtone-console-backend.run.app`, la URL final será `https://tgtone-console-backend.run.app/api/v1/notifications`.
 
 **En frontend (React):**
 ```typescript
