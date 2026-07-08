@@ -11,7 +11,7 @@ Crea, lista, marca como leídas y elimina notificaciones desde cualquier app del
 ## Stack
 
 - **Runtime**: Node.js / Bun
-- **Formato**: ESM (`"type": "module"`)
+- **Formato**: CommonJS (`require()`) — ~~ESM~~ corregido en v1.0.1
 - **Lenguaje**: TypeScript (tipos incluidos)
 - **HTTP**: `fetch` nativo — **0 dependencias externas**
 - **React hook**: export `@tgtone/notifications-sdk/react` (opcional, React 18+)

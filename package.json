@@ -1,6 +1,6 @@
 {
   "name": "@tgtone/notifications-sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SDK para el sistema de notificaciones de TGT One — crear, listar, marcar como leídas y eliminar notificaciones desde cualquier app del ecosistema",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

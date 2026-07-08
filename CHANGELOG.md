@@ -2,6 +2,13 @@
 
 Todas las versiones notables de `@tgtone/notifications-sdk` serán documentadas en este archivo.
 
+## [1.0.1] — 2026-07-08
+
+### Fixed
+
+- Compilación CJS en lugar de ESM: cambiado `"module": "ESNext"` → `"commonjs"` en tsconfig.json
+  - Resuelve `ERR_MODULE_NOT_FOUND` al usar `require()` desde apps que compilan a CommonJS
+
 ## [1.0.0] — 2026-06-11
 
 ### Added
