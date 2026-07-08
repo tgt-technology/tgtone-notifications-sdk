@@ -55,3 +55,22 @@ exports.NotificationsAPI = require('./notifications').NotificationsAPI;
 3. Agregar `.js` a todos los imports en `src/`:
    - `from './notifications'` → `from './notifications.js'`
 4. Verificar que los consumers puedan importarlo (ESM o CJS via `import()` dinámico)
+
+## Consumo local (sin npm publish)
+
+El tarball generado con `npm pack` debe copiarse a la **raíz del proyecto consumidor**, no dentro de `backend/`:
+
+```
+tgtone-vina-app/
+├── tgtone-notifications-sdk-1.0.1.tgz   ← aquí
+├── backend/
+│   ├── package.json                      ← "file:../...tgz"
+│   └── Dockerfile                        ← COPY desde raíz
+```
+
+Razones:
+- Docker build context es la raíz del proyecto (`.`), no `backend/`
+- `.dockerignore` en raíz no debe tener `*.tgz` (bloquea el tarball)
+- `COPY tarball ./` en Dockerfile resuelve desde el context root
+- `"file:../..."` en `package.json` de `backend/` apunta a la raíz
+- `npm install` desde `backend/` resuelve `../` correctamente
