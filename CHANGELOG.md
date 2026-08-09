@@ -2,6 +2,16 @@
 
 Todas las versiones notables de `@tgtone/notifications-sdk` serán documentadas en este archivo.
 
+## [1.1.0] — 2026-08-09
+
+### Added
+
+- **Auto-refresh de token en 401**: nuevo callback opcional `onUnauthorized?: () => Promise<string | null>` en la config.
+  - Si una petición devuelve 401 y hay `onUnauthorized` configurado, el SDK llama al callback (típicamente conectado a `authClient.refreshAccessToken()` del auth-sdk), renueva el token y **reintenta la petición una vez** con el token nuevo.
+  - El polling de notificaciones (cada 15s) sigue funcionando aunque el access token expire con la app abierta (p. ej. durante la noche), renovándolo sobre la marcha.
+  - Retro-compatible: sin `onUnauthorized` configurado, el SDK mantiene el comportamiento previo (lanza `NotificationsError` en 401).
+- 3 tests nuevos de auto-refresh (27 tests totales).
+
 ## [1.0.1] — 2026-07-08
 
 ### Fixed

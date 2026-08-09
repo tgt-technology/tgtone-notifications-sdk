@@ -393,4 +393,78 @@ describe('NotificationsAPI', () => {
       }
     })
   })
+
+  // ── Auto-refresh en 401 ───────────────────────────────────────
+  describe('auto-refresh on 401', () => {
+    test('renueva token y reintenta cuando hay onUnauthorized y el primer intento da 401', async () => {
+      fetchCalls = []
+      let call = 0
+      let capturedAuthHeaders: string[] = []
+      globalThis.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+        const headers = (init?.headers as any) || {}
+        capturedAuthHeaders.push(headers['Authorization'])
+        call++
+        if (call === 1) {
+          return { ok: false, status: 401, statusText: 'Unauthorized', headers: new Headers(), json: async () => ({ message: 'Unauthorized' }), text: async () => 'Unauthorized' } as Response
+        }
+        return { ok: true, status: 200, statusText: 'OK', headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({ notifications: [] }), text: async () => '{}' } as Response
+      }
+
+      let refreshCalled = 0
+      const api = new NotificationsAPI({
+        apiUrl: BASE_URL,
+        getToken: () => 'old-token',
+        onUnauthorized: async () => { refreshCalled++; return 'new-token' },
+      })
+
+      const result = await api.getNotifications()
+
+      expect(refreshCalled).toBe(1)
+      expect(capturedAuthHeaders[0]).toBe('Bearer old-token')
+      expect(capturedAuthHeaders[1]).toBe('Bearer new-token')
+      expect(result).toEqual({ notifications: [] })
+    })
+
+    test('sin onUnauthorized configurado lanza NotificationsError 401 (compat legacy)', async () => {
+      setupMock()
+      mockStatus = 401
+      mockResponse = { message: 'Unauthorized' }
+
+      const api = createAPI()
+      try {
+        await api.getNotifications()
+        expect('should have thrown').toBe(false)
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotificationsError)
+        expect((err as NotificationsError).statusCode).toBe(401)
+      }
+    })
+
+    test('no reintenta dos veces si el refresh no resuelve el 401', async () => {
+      fetchCalls = []
+      let call = 0
+      globalThis.fetch = async () => {
+        call++
+        return { ok: false, status: 401, statusText: 'Unauthorized', headers: new Headers(), json: async () => ({ message: 'Unauthorized' }), text: async () => 'Unauthorized' } as Response
+      }
+
+      let refreshCalled = 0
+      const api = new NotificationsAPI({
+        apiUrl: BASE_URL,
+        getToken: () => 'old-token',
+        onUnauthorized: async () => { refreshCalled++; return 'new-token' },
+      })
+
+      try {
+        await api.getNotifications()
+        expect('should have thrown').toBe(false)
+      } catch (err) {
+        expect(err).toBeInstanceOf(NotificationsError)
+        expect((err as NotificationsError).statusCode).toBe(401)
+      }
+      // Llamó fetch 2 veces (1 original + 1 reintento), refresh 1 vez — NO un loop infinito
+      expect(call).toBe(2)
+      expect(refreshCalled).toBe(1)
+    })
+  })
 })

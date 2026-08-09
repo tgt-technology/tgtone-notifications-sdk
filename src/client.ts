@@ -17,6 +17,13 @@ export interface NotificationsSDKConfig {
   getToken: () => string | null;
 
   /**
+   * Callback opcional para renovar el token cuando una petición devuelve 401.
+   * Debe retornar el token renovado (o null si no se pudo renovar).
+   * Típicamente conecta a `authClient.refreshAccessToken()` del auth-sdk.
+   */
+  onUnauthorized?: () => Promise<string | null>;
+
+  /**
    * Timeout para requests en milisegundos
    * @default 30000
    */
@@ -40,6 +47,7 @@ export interface NotificationsSDKConfig {
 export class NotificationsClient {
   protected baseUrl: string;
   protected getToken: () => string | null;
+  protected onUnauthorized: (() => Promise<string | null>) | undefined;
   protected debug: boolean;
   protected timeout: number;
   protected headers: Record<string, string>;
@@ -47,19 +55,67 @@ export class NotificationsClient {
   constructor(config: NotificationsSDKConfig) {
     this.baseUrl = config.apiUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
+    this.onUnauthorized = config.onUnauthorized;
     this.debug = config.debug ?? false;
     this.timeout = config.timeout ?? 30000;
     this.headers = config.headers ?? {};
   }
 
   /**
-   * Realiza una request HTTP al backend
+   * Realiza una request HTTP al backend. Ante 401 y con `onUnauthorized`
+   * configurado, renueva el token y reintenta una vez.
    */
   protected async request<T>(
     endpoint: string,
     options?: RequestInit
   ): Promise<T> {
-    const token = this.getToken();
+    let token = this.getToken();
+    let response = await this.doFetch(endpoint, options, token);
+
+    // Si 401 y hay mecanismo de refresh, renovar token y reintentar UNA vez.
+    if (response.status === 401 && this.onUnauthorized) {
+      const refreshed = await this.onUnauthorized();
+      if (refreshed) {
+        token = refreshed;
+        response = await this.doFetch(endpoint, options, token);
+      }
+    }
+
+    clearTimeout((response as any).__timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorDetails: unknown;
+      try {
+        errorDetails = JSON.parse(errorText);
+      } catch {
+        errorDetails = errorText;
+      }
+      throw new NotificationsError(
+        (errorDetails as any)?.message || `HTTP ${response.status}: ${response.statusText}`,
+        response.status,
+        errorDetails
+      );
+    }
+
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    const data = await response.json();
+
+    if (this.debug) {
+      console.log(`[TGT Notifications SDK] Response:`, data);
+    }
+
+    return data as T;
+  }
+
+  private async doFetch(
+    endpoint: string,
+    options: RequestInit | undefined,
+    token: string | null
+  ): Promise<Response> {
     const url = `${this.baseUrl}${endpoint}`;
 
     if (this.debug) {
@@ -75,40 +131,13 @@ export class NotificationsClient {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
+          ...(token && { [`Authorization`]: `Bearer ${token}` }),
           ...this.headers,
           ...options?.headers,
         },
       });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorDetails: unknown;
-        try {
-          errorDetails = JSON.parse(errorText);
-        } catch {
-          errorDetails = errorText;
-        }
-        throw new NotificationsError(
-          (errorDetails as any)?.message || `HTTP ${response.status}: ${response.statusText}`,
-          response.status,
-          errorDetails
-        );
-      }
-
-      if (response.status === 204) {
-        return {} as T;
-      }
-
-      const data = await response.json();
-
-      if (this.debug) {
-        console.log(`[TGT Notifications SDK] Response:`, data);
-      }
-
-      return data as T;
+      (response as any).__timeoutId = timeoutId;
+      return response;
     } catch (error: unknown) {
       clearTimeout(timeoutId);
 

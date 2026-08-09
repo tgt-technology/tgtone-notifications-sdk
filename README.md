@@ -101,6 +101,7 @@ function NotifBell() {
 |-----------|------|---------|-------------|
 | `apiUrl` | `string` | **requerido** | URL base del Core API. ⚠️ **Sin `/api` al final** — el SDK agrega `/api/v1/notifications` automáticamente. Ej: `https://tgtone-console-backend.run.app` |
 | `getToken` | `() => string \| null` | **requerido** | Función que retorna el JWT (sin "Bearer") |
+| `onUnauthorized` | `() => Promise<string \| null>` | `undefined` | **(Opcional)** Callback para renovar el token cuando una petición devuelve 401. Típicamente conecta a `authClient.refreshAccessToken()` del auth-sdk y retorna el token renovado. Sin él, el SDK lanza `NotificationsError` en 401 (comportamiento legacy). |
 | `timeout` | `number` | `30000` | Timeout por request en ms |
 | `headers` | `Record<string, string>` | `{}` | Headers adicionales |
 | `debug` | `boolean` | `false` | Logs de debug en consola |
